@@ -186,6 +186,7 @@ async function detectBrand(base64Image) {
                             content: base64Image.split(',')[1]
                         },
                         features: [
+                            { type: 'WEB_DETECTION', maxResults: 10 },
                             { type: 'LOGO_DETECTION', maxResults: 5 },
                             { type: 'TEXT_DETECTION', maxResults: 5 },
                             { type: 'LABEL_DETECTION', maxResults: 10 }
@@ -200,35 +201,78 @@ async function detectBrand(base64Image) {
 
         // Debug: Log what Vision API found
         console.log('Vision API Response:', result);
-        if (result.logoAnnotations) {
-            console.log('Logos detected:', result.logoAnnotations.map(l => l.description));
-        }
-        if (result.textAnnotations) {
-            console.log('Text detected:', result.textAnnotations[0]?.description);
-        }
-        if (result.labelAnnotations) {
-            console.log('Labels detected:', result.labelAnnotations.map(l => l.description));
-        }
 
-        // Extract brand from logos or text
+        // Extract brand using web detection (reverse image search)
         let brand = 'Unknown Gin';
         let confidence = 0.5;
+        let description = null;
+        let webUrl = null;
 
-        if (result.logoAnnotations && result.logoAnnotations.length > 0) {
+        // Priority 1: Web detection (best match from internet)
+        if (result.webDetection) {
+            console.log('Web Detection:', result.webDetection);
+
+            // Try web entities (products/brands found on the internet)
+            if (result.webDetection.webEntities && result.webDetection.webEntities.length > 0) {
+                // Find the most relevant gin-related entity
+                const ginEntity = result.webDetection.webEntities.find(entity =>
+                    entity.description &&
+                    (entity.description.toLowerCase().includes('gin') ||
+                     entity.description.toLowerCase().includes('distillery'))
+                );
+
+                if (ginEntity) {
+                    brand = ginEntity.description;
+                    confidence = ginEntity.score || 0.8;
+                    console.log('Brand from web entity:', brand);
+                } else if (result.webDetection.webEntities[0].description) {
+                    // Use the first entity if no gin-specific one found
+                    brand = result.webDetection.webEntities[0].description;
+                    confidence = result.webDetection.webEntities[0].score || 0.7;
+                    console.log('Brand from first web entity:', brand);
+                }
+            }
+
+            // Try to get best guess label
+            if (result.webDetection.bestGuessLabels && result.webDetection.bestGuessLabels.length > 0) {
+                const bestGuess = result.webDetection.bestGuessLabels[0].label;
+                console.log('Best guess label:', bestGuess);
+
+                // Use best guess if we don't have a brand yet or it's more descriptive
+                if (brand === 'Unknown Gin' || bestGuess.length > brand.length) {
+                    brand = bestGuess;
+                    confidence = 0.85;
+                }
+            }
+
+            // Get matching web pages for additional info
+            if (result.webDetection.pagesWithMatchingImages && result.webDetection.pagesWithMatchingImages.length > 0) {
+                webUrl = result.webDetection.pagesWithMatchingImages[0].url;
+                console.log('Found on web:', webUrl);
+            }
+        }
+
+        // Priority 2: Logo detection
+        if ((brand === 'Unknown Gin' || confidence < 0.7) && result.logoAnnotations && result.logoAnnotations.length > 0) {
             brand = result.logoAnnotations[0].description;
             confidence = result.logoAnnotations[0].score;
             console.log('Brand from logo:', brand);
-        } else if (result.textAnnotations && result.textAnnotations.length > 0) {
-            // Try to extract brand from text
+        }
+
+        // Priority 3: Text detection
+        if ((brand === 'Unknown Gin' || confidence < 0.6) && result.textAnnotations && result.textAnnotations.length > 0) {
             const text = result.textAnnotations[0].description;
+            console.log('Text detected:', text);
             brand = extractBrandFromText(text);
-            confidence = 0.7;
+            confidence = 0.6;
             console.log('Brand from text:', brand);
         }
 
         return {
             brand: brand,
-            confidence: confidence
+            confidence: confidence,
+            webUrl: webUrl,
+            rawText: result.textAnnotations?.[0]?.description
         };
 
     } catch (error) {
@@ -290,7 +334,12 @@ function extractBrandFromText(text) {
 
 // Generate Gin Data
 async function generateGinData(brandInfo) {
-    // This is a mock database. In a real app, you'd query an API or local database
+    console.log('Generating gin data for:', brandInfo);
+
+    // Try to extract info from detected text
+    const textInfo = extractInfoFromText(brandInfo.rawText || '');
+
+    // Known database for common gins (fallback)
     const ginDatabase = {
         'Bombay Sapphire': {
             country: 'England',
@@ -345,22 +394,103 @@ async function generateGinData(brandInfo) {
         }
     }
 
-    // Default data if still no match
+    // Default data if still no match - use extracted info from label
     if (!data) {
         data = {
-            country: 'Unknown',
-            abv: '40-47%',
-            type: 'London Dry',
-            tastingNotes: 'A quality gin with traditional botanicals. Juniper-forward with citrus and herbal notes.',
-            botanicals: ['Juniper', 'Coriander', 'Citrus Peel', 'Angelica']
+            country: textInfo.country || 'Unknown',
+            abv: textInfo.abv || '40-47%',
+            type: textInfo.type || 'Gin',
+            tastingNotes: generateTastingNotes(brandInfo.brand, textInfo),
+            botanicals: textInfo.botanicals.length > 0 ? textInfo.botanicals : ['Juniper', 'Coriander', 'Citrus Peel', 'Angelica']
         };
+    } else {
+        // Merge detected info with database info
+        if (textInfo.abv && textInfo.abv !== 'Unknown') data.abv = textInfo.abv;
+        if (textInfo.country && textInfo.country !== 'Unknown') data.country = textInfo.country;
+        if (textInfo.botanicals.length > 0) {
+            // Merge botanicals
+            data.botanicals = [...new Set([...data.botanicals, ...textInfo.botanicals])];
+        }
     }
 
     return {
         name: brandInfo.brand,
         ...data,
+        webUrl: brandInfo.webUrl,
         detectedAt: new Date().toISOString()
     };
+}
+
+// Extract info from label text
+function extractInfoFromText(text) {
+    if (!text) return { country: null, abv: null, type: null, botanicals: [] };
+
+    const info = {
+        country: null,
+        abv: null,
+        type: null,
+        botanicals: []
+    };
+
+    // Extract ABV
+    const abvMatch = text.match(/(\d+\.?\d*)\s*%\s*(ABV|ALC|VOL|ALCOHOL)/i) ||
+                     text.match(/(\d+\.?\d*)\s*°/) ||
+                     text.match(/(40|41|42|43|44|45|46|47|48|49|50)%/);
+    if (abvMatch) {
+        info.abv = `${abvMatch[1]}%`;
+        console.log('Extracted ABV:', info.abv);
+    }
+
+    // Extract country
+    const countries = [
+        'England', 'Scotland', 'Wales', 'Ireland', 'United Kingdom', 'UK',
+        'USA', 'America', 'United States', 'Spain', 'France', 'Germany',
+        'Netherlands', 'Belgium', 'Italy', 'Japan', 'India', 'Australia',
+        'New Zealand', 'Canada', 'Sweden', 'Finland', 'Iceland', 'Norway'
+    ];
+    for (const country of countries) {
+        if (text.toUpperCase().includes(country.toUpperCase())) {
+            info.country = country;
+            console.log('Extracted country:', country);
+            break;
+        }
+    }
+
+    // Extract gin type
+    const types = ['London Dry', 'Old Tom', 'Plymouth', 'Navy Strength', 'Contemporary', 'New Western'];
+    for (const type of types) {
+        if (text.toUpperCase().includes(type.toUpperCase())) {
+            info.type = type;
+            console.log('Extracted type:', type);
+            break;
+        }
+    }
+
+    // Extract botanicals
+    const commonBotanicals = [
+        'Juniper', 'Coriander', 'Angelica', 'Orris', 'Lemon', 'Orange', 'Lime',
+        'Grapefruit', 'Cardamom', 'Cinnamon', 'Cassia', 'Liquorice', 'Licorice',
+        'Almond', 'Cubeb', 'Cucumber', 'Rose', 'Lavender', 'Elderflower',
+        'Chamomile', 'Thyme', 'Sage', 'Rosemary', 'Pepper', 'Grains of Paradise'
+    ];
+    for (const botanical of commonBotanicals) {
+        if (text.toUpperCase().includes(botanical.toUpperCase())) {
+            info.botanicals.push(botanical);
+        }
+    }
+
+    return info;
+}
+
+// Generate tasting notes based on brand and extracted info
+function generateTastingNotes(brandName, textInfo) {
+    const templates = [
+        `${brandName} presents a ${textInfo.type || 'distinctive'} profile with ${textInfo.botanicals.length > 0 ? textInfo.botanicals.slice(0, 3).join(', ') : 'traditional botanicals'}. A well-crafted gin with balanced flavors.`,
+        `A quality gin featuring ${textInfo.botanicals.length > 0 ? textInfo.botanicals.slice(0, 2).join(' and ') : 'juniper and citrus'}. Smooth on the palate with a clean, refreshing finish.`,
+        `This gin showcases ${textInfo.botanicals.length > 0 ? 'notes of ' + textInfo.botanicals.slice(0, 3).join(', ') : 'classic gin botanicals'} with a modern twist. Well-balanced and aromatic.`
+    ];
+
+    return templates[Math.floor(Math.random() * templates.length)];
 }
 
 // Display Bottle Card
