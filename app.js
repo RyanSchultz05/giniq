@@ -198,20 +198,37 @@ async function detectBrand(base64Image) {
         const data = await response.json();
         const result = data.responses[0];
 
+        // Debug: Log what Vision API found
+        console.log('Vision API Response:', result);
+        if (result.logoAnnotations) {
+            console.log('Logos detected:', result.logoAnnotations.map(l => l.description));
+        }
+        if (result.textAnnotations) {
+            console.log('Text detected:', result.textAnnotations[0]?.description);
+        }
+        if (result.labelAnnotations) {
+            console.log('Labels detected:', result.labelAnnotations.map(l => l.description));
+        }
+
         // Extract brand from logos or text
         let brand = 'Unknown Gin';
+        let confidence = 0.5;
 
         if (result.logoAnnotations && result.logoAnnotations.length > 0) {
             brand = result.logoAnnotations[0].description;
+            confidence = result.logoAnnotations[0].score;
+            console.log('Brand from logo:', brand);
         } else if (result.textAnnotations && result.textAnnotations.length > 0) {
             // Try to extract brand from text
             const text = result.textAnnotations[0].description;
             brand = extractBrandFromText(text);
+            confidence = 0.7;
+            console.log('Brand from text:', brand);
         }
 
         return {
             brand: brand,
-            confidence: result.logoAnnotations ? result.logoAnnotations[0].score : 0.7
+            confidence: confidence
         };
 
     } catch (error) {
@@ -226,15 +243,45 @@ async function detectBrand(base64Image) {
 // Extract Brand from Text
 function extractBrandFromText(text) {
     const ginBrands = [
-        'Tanqueray', 'Bombay Sapphire', 'Hendricks', "Hendrick's", 'Beefeater',
-        'Gordon', 'Plymouth', 'Aviation', 'Monkey 47', 'The Botanist',
+        // Popular brands
+        'Tanqueray', 'Bombay Sapphire', 'Bombay', 'Hendricks', "Hendrick's", 'Beefeater',
+        'Gordon', "Gordon's", 'Plymouth', 'Aviation', 'Monkey 47', 'The Botanist',
         'Roku', 'Sipsmith', 'Whitley Neill', 'Martin Miller', 'Gin Mare',
-        'Bulldog', 'Bloom', 'Citadelle', 'Hayman', 'Bobby', 'Nikka'
+        'Bulldog', 'Bloom', 'Citadelle', 'Hayman', 'Bobby', 'Nikka',
+        // Additional brands
+        'Seagram', 'New Amsterdam', 'Tanqueray No. Ten', 'Nolet', 'Botanist',
+        'Malfy', 'Ki No Bi', 'Four Pillars', 'Drumshanbo', 'Gunpowder',
+        'Hendrick\'s', 'St George', 'Death\'s Door', 'Few', 'Bluecoat',
+        'Brooklyn', 'Barr Hill', 'Uncle Val', 'Boodles', 'Broker',
+        'Oxley', 'Gilbey', 'Star of Bombay', 'Empress', 'Aviation American',
+        'Seedlip', 'Larios', 'MOM', 'Caorunn', 'Edinburgh', 'Isle of Harris',
+        'Sacred', 'Dodd', 'Bruichladdich', 'Tarquin', 'Warner Edwards',
+        'Cotswolds', 'Cambridge', 'Thomas Dakin', 'Kirkjuvagr', 'Napue',
+        'Bols', 'Genever', 'Boomsma', 'Zuidam', 'Makar', 'Jinzu',
+        'Nikka Coffey', 'Etsu', 'Suntory', 'Sakurao', 'Bombay Original'
     ];
 
+    // Try exact matches first (case insensitive)
     for (const brand of ginBrands) {
         if (text.toUpperCase().includes(brand.toUpperCase())) {
+            console.log(`Matched brand: ${brand} in text: ${text.substring(0, 100)}`);
             return brand;
+        }
+    }
+
+    // If no match, look for common gin words
+    const ginWords = ['GIN', 'DRY', 'LONDON', 'DISTILLED', 'DISTILLERY'];
+    const hasGinWord = ginWords.some(word => text.toUpperCase().includes(word));
+
+    if (hasGinWord) {
+        // Try to extract the first capitalized word that might be a brand
+        const words = text.split(/\s+/);
+        for (const word of words) {
+            if (word.length > 3 && word[0] === word[0].toUpperCase() &&
+                !ginWords.includes(word.toUpperCase())) {
+                console.log(`Guessing brand from word: ${word}`);
+                return word;
+            }
         }
     }
 
@@ -282,13 +329,32 @@ async function generateGinData(brandInfo) {
         }
     };
 
-    const data = ginDatabase[brandInfo.brand] || {
-        country: 'Unknown',
-        abv: '40-47%',
-        type: 'London Dry',
-        tastingNotes: 'A quality gin with traditional botanicals. Juniper-forward with citrus and herbal notes.',
-        botanicals: ['Juniper', 'Coriander', 'Citrus Peel', 'Angelica']
-    };
+    // Try exact match first
+    let data = ginDatabase[brandInfo.brand];
+
+    // If no exact match, try fuzzy matching
+    if (!data) {
+        const brandLower = brandInfo.brand.toLowerCase();
+        for (const [key, value] of Object.entries(ginDatabase)) {
+            if (brandLower.includes(key.toLowerCase()) || key.toLowerCase().includes(brandLower)) {
+                console.log(`Fuzzy matched: ${brandInfo.brand} -> ${key}`);
+                data = value;
+                brandInfo.brand = key; // Update to matched name
+                break;
+            }
+        }
+    }
+
+    // Default data if still no match
+    if (!data) {
+        data = {
+            country: 'Unknown',
+            abv: '40-47%',
+            type: 'London Dry',
+            tastingNotes: 'A quality gin with traditional botanicals. Juniper-forward with citrus and herbal notes.',
+            botanicals: ['Juniper', 'Coriander', 'Citrus Peel', 'Angelica']
+        };
+    }
 
     return {
         name: brandInfo.brand,
