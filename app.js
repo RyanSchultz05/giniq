@@ -1,8 +1,10 @@
 // Configuration
 const CONFIG = {
-    GOOGLE_VISION_API_KEY: 'AIzaSyBXFFKzMQJCeRcUYx0PAeCH8SHgIG0-zN0', // Replace with your Google Cloud Vision API key
-    SCAN_INTERVAL: 2000, // Scan every 2 seconds
-    CONFIDENCE_THRESHOLD: 0.5
+    GOOGLE_VISION_API_KEY: 'AIzaSyBXFFKzMQJCeRcUYx0PAeCH8SHgIG0-zN0',
+    GEMINI_API_KEY: 'AIzaSyBXFFKzMQJCeRcUYx0PAeCH8SHgIG0-zN0', // Same key works for Gemini
+    SCAN_INTERVAL: 2000,
+    CONFIDENCE_THRESHOLD: 0.5,
+    USE_AI_IDENTIFICATION: true // Toggle AI identification
 };
 
 // State
@@ -133,20 +135,23 @@ function updateDetectionStatus(message, detected) {
     }
 }
 
-// Analyze Bottle (using Google Cloud Vision API)
+// Analyze Bottle (using AI)
 async function analyzeBottle() {
     try {
-        showLoading('Analyzing bottle...');
+        showLoading('Analyzing bottle with AI...');
 
         // Capture image
         canvas.toBlob(async (blob) => {
             const base64Image = await blobToBase64(blob);
 
-            // Call Google Cloud Vision API
-            const brandInfo = await detectBrand(base64Image);
-
-            // Generate gin data
-            currentGinData = await generateGinData(brandInfo);
+            if (CONFIG.USE_AI_IDENTIFICATION) {
+                // Use AI to identify and analyze the gin
+                currentGinData = await identifyGinWithAI(base64Image);
+            } else {
+                // Use traditional Vision API
+                const brandInfo = await detectBrand(base64Image);
+                currentGinData = await generateGinData(brandInfo);
+            }
 
             // Show bottle card
             displayBottleCard(currentGinData);
@@ -158,6 +163,94 @@ async function analyzeBottle() {
         console.error('Analysis error:', error);
         hideLoading();
         alert('Failed to analyze bottle. Please try again.');
+    }
+}
+
+// Identify Gin using Gemini AI
+async function identifyGinWithAI(base64Image) {
+    try {
+        console.log('Using Gemini AI to identify gin...');
+
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [
+                            {
+                                text: `You are an expert sommelier and gin specialist. Analyze this gin bottle image and provide detailed information in JSON format.
+
+Your response MUST be ONLY valid JSON with this exact structure (no markdown, no code blocks, no extra text):
+{
+  "name": "Full brand name of the gin",
+  "country": "Country of origin",
+  "abv": "Alcohol percentage (e.g., 42%)",
+  "type": "Type of gin (London Dry, Navy Strength, Contemporary, etc.)",
+  "tastingNotes": "Detailed tasting notes describing the flavor profile, aroma, and finish",
+  "botanicals": ["List", "of", "key", "botanicals"],
+  "confidence": 0.95
+}
+
+Be specific and accurate. If you can clearly see the brand name, use it. Extract ABV from the label if visible. Provide professional tasting notes based on the brand and type of gin.`
+                            },
+                            {
+                                inline_data: {
+                                    mime_type: "image/jpeg",
+                                    data: base64Image.split(',')[1]
+                                }
+                            }
+                        ]
+                    }],
+                    generationConfig: {
+                        temperature: 0.4,
+                        maxOutputTokens: 1024,
+                    }
+                })
+            }
+        );
+
+        const data = await response.json();
+        console.log('Gemini AI Response:', data);
+
+        if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+            const aiText = data.candidates[0].content.parts[0].text;
+            console.log('AI Text:', aiText);
+
+            // Extract JSON from response (remove markdown if present)
+            let jsonText = aiText.trim();
+            if (jsonText.startsWith('```json')) {
+                jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+            } else if (jsonText.startsWith('```')) {
+                jsonText = jsonText.replace(/```\n?/g, '');
+            }
+
+            const ginData = JSON.parse(jsonText);
+
+            return {
+                name: ginData.name || 'Unknown Gin',
+                country: ginData.country || 'Unknown',
+                abv: ginData.abv || '40-47%',
+                type: ginData.type || 'Gin',
+                tastingNotes: ginData.tastingNotes || 'A quality gin with traditional botanicals.',
+                botanicals: ginData.botanicals || ['Juniper', 'Coriander', 'Citrus'],
+                detectedAt: new Date().toISOString(),
+                confidence: ginData.confidence || 0.8
+            };
+        }
+
+        throw new Error('Invalid AI response');
+
+    } catch (error) {
+        console.error('Gemini AI error:', error);
+
+        // Fallback to traditional detection
+        console.log('Falling back to Vision API...');
+        const brandInfo = await detectBrand(base64Image);
+        return await generateGinData(brandInfo);
     }
 }
 
