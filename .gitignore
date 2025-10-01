@@ -1,0 +1,7 @@
+node_modules/
+.DS_Store
+*.log
+server.js
+cert.pem
+key.pem
+create-icons.html

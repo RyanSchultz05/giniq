@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1a1a2e">
+    <title>GinIQ - Smart Gin Scanner</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.svg">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="logo">Gin<span>IQ</span></h1>
+            <button class="collection-btn" id="collectionBtn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7" rx="1"/>
+                    <rect x="14" y="3" width="7" height="7" rx="1"/>
+                    <rect x="14" y="14" width="7" height="7" rx="1"/>
+                    <rect x="3" y="14" width="7" height="7" rx="1"/>
+                </svg>
+            </button>
+        </header>
+
+        <!-- Camera View -->
+        <div class="camera-container" id="cameraContainer">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" hidden></canvas>
+
+            <!-- Scan Overlay -->
+            <div class="scan-overlay">
+                <div class="scan-frame">
+                    <div class="corner tl"></div>
+                    <div class="corner tr"></div>
+                    <div class="corner bl"></div>
+                    <div class="corner br"></div>
+                    <div class="scan-line"></div>
+                </div>
+                <p class="scan-instruction">Position bottle within frame</p>
+            </div>
+
+            <!-- Detection Status -->
+            <div class="detection-status" id="detectionStatus">
+                <div class="status-dot"></div>
+                <span>Scanning...</span>
+            </div>
+        </div>
+
+        <!-- Detected Bottle Card -->
+        <div class="bottle-card hidden" id="bottleCard">
+            <div class="card-header">
+                <h2 id="ginName">Loading...</h2>
+                <button class="close-btn" id="closeCard">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="card-content">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="label">Country</span>
+                        <span class="value" id="country">—</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">ABV</span>
+                        <span class="value" id="abv">—</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Type</span>
+                        <span class="value" id="ginType">London Dry</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Added</span>
+                        <span class="value" id="addedDate">—</span>
+                    </div>
+                </div>
+
+                <div class="tasting-notes">
+                    <h3>Tasting Notes</h3>
+                    <p id="tastingNotes">Analyzing...</p>
+                </div>
+
+                <div class="botanicals">
+                    <h3>Key Botanicals</h3>
+                    <div class="botanical-tags" id="botanicals">
+                        <span class="tag">Juniper</span>
+                        <span class="tag">Coriander</span>
+                        <span class="tag">Angelica</span>
+                    </div>
+                </div>
+            </div>
+
+            <button class="save-btn" id="saveBtn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                    <polyline points="17 21 17 13 7 13 7 21"/>
+                    <polyline points="7 3 7 8 15 8"/>
+                </svg>
+                Save to Collection
+            </button>
+        </div>
+
+        <!-- Collection View -->
+        <div class="collection-view hidden" id="collectionView">
+            <div class="collection-header">
+                <button class="back-btn" id="backBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12"/>
+                        <polyline points="12 19 5 12 12 5"/>
+                    </svg>
+                </button>
+                <h2>My Collection</h2>
+                <span class="count" id="collectionCount">0</span>
+            </div>
+
+            <div class="collection-grid" id="collectionGrid">
+                <!-- Collection items will be inserted here -->
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay hidden" id="loadingOverlay">
+            <div class="loader"></div>
+            <p>Analyzing bottle...</p>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
+    <script src="app.js"></script>
+</body>
+</html>

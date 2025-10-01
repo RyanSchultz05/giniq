@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(python:*)",
+      "Bash(ipconfig)",
+      "Bash(findstr:*)",
+      "Bash(where node)",
+      "Bash(node server.js)",
+      "Bash(npm install:*)",
+      "Bash(http-server:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

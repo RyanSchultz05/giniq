@@ -1,0 +1,20 @@
+{
+  "name": "GinIQ - Smart Gin Scanner",
+  "short_name": "GinIQ",
+  "description": "Scan and identify gin bottles with AI-powered computer vision",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#6C63FF",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["lifestyle", "food"],
+  "screenshots": []
+}
